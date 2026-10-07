@@ -1,0 +1,55 @@
+version: "2"
+
+linters:
+  default: standard
+  enable:
+    - bodyclose
+    - errorlint
+    - gocritic
+    - gosec
+    - misspell
+    - nilerr
+    - nolintlint
+    - prealloc
+    - revive
+    - unconvert
+    - unparam
+    - usestdlibvars
+    - whitespace
+  settings:
+    errcheck:
+      exclude-functions:
+        - (*os.File).Close
+        - fmt.Fprint
+        - fmt.Fprintf
+        - fmt.Fprintln
+        - os.RemoveAll
+        - (*github.com/scuba-plaza/redact/internal/git.BlobReader).Close
+    gosec:
+      excludes:
+        - G204
+        - G301
+        - G302
+        - G304
+        - G306
+        - G702
+        - G703
+    revive:
+      rules:
+        - name: exported
+          disabled: true
+        - name: package-comments
+          disabled: true
+  exclusions:
+    rules:
+      - path: _test\.go
+        linters:
+          - gosec
+          - errcheck
+          - prealloc
+          - unparam
+
+formatters:
+  enable:
+    - gofmt
+    - goimports
