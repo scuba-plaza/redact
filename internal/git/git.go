@@ -333,7 +333,7 @@ func (r *Repo) History(ctx context.Context) ([]HistoryBlob, error) {
 	if err != nil {
 		return nil, err
 	}
-	var loose []string
+	var extra [][2]string
 	err = r.stream(ctx, func(rd *bufio.Reader) error {
 		for {
 			line, err := rd.ReadString('\n')
@@ -341,11 +341,7 @@ func (r *Repo) History(ctx context.Context) ([]HistoryBlob, error) {
 			if line != "" {
 				sha, path, _ := strings.Cut(line, " ")
 				if _, known := h.index[sha]; !known {
-					if path != "" {
-						h.add(sha, Place{Path: path})
-					} else {
-						loose = append(loose, sha)
-					}
+					extra = append(extra, [2]string{sha, path})
 				}
 			}
 			if errors.Is(err, io.EOF) {
@@ -355,20 +351,36 @@ func (r *Repo) History(ctx context.Context) ([]HistoryBlob, error) {
 				return err
 			}
 		}
-	}, "rev-list", "--objects", "--all", "--filter=object:type=blob")
+	}, "rev-list", "--objects", "--all", "--filter=object:type=blob", "--filter-provided-objects")
 	if err != nil {
 		return nil, err
 	}
-	if len(loose) > 0 {
-		out, err := r.RunInput(ctx, []byte(strings.Join(loose, "\n")+"\n"), "cat-file", "--batch-check=%(objectname) %(objecttype)")
-		if err != nil {
-			return nil, err
+	if len(extra) == 0 {
+		return h.blobs, nil
+	}
+	var input bytes.Buffer
+	for _, e := range extra {
+		input.WriteString(e[0] + "\n")
+	}
+	out, err := r.RunInput(ctx, input.Bytes(), "cat-file", "--batch-check=%(objectname) %(objecttype)")
+	if err != nil {
+		return nil, err
+	}
+	types := map[string]string{}
+	for _, line := range strings.Split(string(out), "\n") {
+		if sha, typ, ok := strings.Cut(line, " "); ok {
+			types[sha] = typ
 		}
-		for _, line := range strings.Split(string(out), "\n") {
-			if sha, typ, ok := strings.Cut(line, " "); ok && typ == "blob" {
-				h.add(sha, Place{Path: "(tagged blob " + sha[:min(12, len(sha))] + ")"})
-			}
+	}
+	for _, e := range extra {
+		sha, path := e[0], e[1]
+		if types[sha] != "blob" {
+			continue
 		}
+		if path == "" {
+			path = "(tagged blob " + sha[:min(12, len(sha))] + ")"
+		}
+		h.add(sha, Place{Path: path})
 	}
 	return h.blobs, nil
 }

@@ -13,7 +13,7 @@
         "aarch64-darwin"
       ];
       forAllSystems = f: nixpkgs.lib.genAttrs systems (system: f nixpkgs.legacyPackages.${system});
-      version = "1.0.0";
+      version = "1.0.1";
       package =
         pkgs:
         pkgs.buildGoModule {

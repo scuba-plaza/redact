@@ -212,18 +212,49 @@ func TestHistoryIgnoresMergeConfigAndFindsTaggedBlobs(t *testing.T) {
 	sh(t, r.Root, "git", "merge", "-q", "--no-edit", "side")
 	sh(t, r.Root, "git", "config", "log.diffMerges", "combined")
 	sh(t, r.Root, "git", "config", "log.showSignature", "true")
-	blob := strings.TrimSpace(sh(t, r.Root, "sh", "-c", "printf 'only tagged' | git hash-object -w --stdin"))
-	sh(t, r.Root, "git", "tag", "loose", blob)
+	sh(t, r.Root, "git", "tag", "-a", "v1", "-m", "v1")
+	sh(t, r.Root, "git", "tag", "light", "v1")
+	hashed := func(s string) string {
+		return strings.TrimSpace(sh(t, r.Root, "sh", "-c", "printf '"+s+"' | git hash-object -w --stdin"))
+	}
+	loose, annotated, nested := hashed("only tagged"), hashed("annotated"), hashed("nested")
+	sh(t, r.Root, "git", "tag", "loose", loose)
+	sh(t, r.Root, "git", "tag", "-a", "ann", "-m", "ann", annotated)
+	sh(t, r.Root, "git", "tag", "-a", "inner", "-m", "inner", nested)
+	sh(t, r.Root, "git", "-c", "advice.nestedTag=false", "tag", "-a", "outer", "-m", "outer", "inner")
+	write(t, r.Root, "d/e", "in a tagged tree")
+	sh(t, r.Root, "git", "add", "d/e")
+	tree := strings.TrimSpace(sh(t, r.Root, "git", "write-tree"))
+	sh(t, r.Root, "git", "tag", "tree", tree)
+	inTree := strings.TrimSpace(sh(t, r.Root, "git", "rev-parse", "tree:d/e"))
 	blobs, err := r.History(ctx)
 	if err != nil {
 		t.Fatal(err)
 	}
-	found := map[string]bool{}
+	places := map[string][]Place{}
 	for _, b := range blobs {
-		found[b.Blob] = true
+		places[b.Blob] = b.Places
 	}
-	if len(blobs) != 4 || !found[blob] {
-		t.Fatalf("got %+v", blobs)
+	if len(blobs) != 7 {
+		t.Fatalf("got %d blobs: %+v", len(blobs), blobs)
+	}
+	for _, sha := range []string{loose, annotated, nested} {
+		if p := places[sha]; len(p) != 1 || p[0].Path != "(tagged blob "+sha[:12]+")" {
+			t.Fatalf("blob %s: got %+v", sha, p)
+		}
+	}
+	if p := places[inTree]; len(p) != 1 || p[0].Path != "d/e" {
+		t.Fatalf("tree blob: got %+v", p)
+	}
+	br, err := r.Blobs(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer br.Close()
+	for _, b := range blobs {
+		if _, err := br.Read(b.Blob); err != nil {
+			t.Fatal(err)
+		}
 	}
 }
 
